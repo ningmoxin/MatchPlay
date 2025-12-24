@@ -58,19 +58,31 @@
   <script>
     // 產生 QR Code
     function generateQRCode() {
-      const viewerUrl = window.location.href.replace('index.html', 'viewer.html');
+      // 處理 URL：如果是根目錄則加上 viewer.html，否則替換 index.html
+      let viewerUrl = window.location.href;
+      if (viewerUrl.endsWith('/')) {
+        viewerUrl += 'viewer.html';
+      } else if (viewerUrl.includes('index.html')) {
+        viewerUrl = viewerUrl.replace('index.html', 'viewer.html');
+      } else {
+        viewerUrl = viewerUrl.replace(/\/?$/, '/viewer.html');
+      }
+
       const qrContainer = document.getElementById('qrcode');
 
-      QRCode.toCanvas(viewerUrl, {
+      // 建立 canvas 元素
+      const canvas = document.createElement('canvas');
+
+      QRCode.toCanvas(canvas, viewerUrl, {
         width: 200,
         margin: 2,
         color: {
           dark: '#165b33',
           light: '#ffffff'
         }
-      }, function(error, canvas) {
+      }, function(error) {
         if (error) {
-          console.error(error);
+          console.error('QR Code 錯誤:', error);
           qrContainer.innerHTML = '<p style="color: #999;">QR Code 產生失敗</p>';
           return;
         }
