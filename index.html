@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MatchPlay - 聖誕交換禮物配對</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- 標題區 -->
+    <header class="header">
+      <h1>🎄 MatchPlay 🎄</h1>
+      <p class="subtitle">聖誕交換禮物配對系統</p>
+    </header>
+
+    <!-- 入口按鈕 -->
+    <div class="entry-buttons">
+      <a href="admin.html" class="entry-btn btn-primary">
+        <div class="icon">🎅</div>
+        <div class="label">管理者</div>
+      </a>
+      <a href="viewer.html" class="entry-btn btn-secondary">
+        <div class="icon">👀</div>
+        <div class="label">觀眾</div>
+      </a>
+    </div>
+
+    <!-- QR Code 區域 -->
+    <div class="card">
+      <h2>📱 掃描加入觀看</h2>
+      <div class="qr-container">
+        <div id="qrcode"></div>
+        <p style="margin-top: 15px; color: #666;">掃描 QR Code 在手機上同步觀看配對揭曉</p>
+      </div>
+    </div>
+
+    <!-- 目前狀態 -->
+    <div class="card">
+      <h2>📊 目前狀態</h2>
+      <div id="status-display">
+        <p>載入中...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- QR Code 產生器 -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <!-- 共用設定 -->
+  <script src="js/firebase-config.js"></script>
+
+  <script>
+    // 產生 QR Code
+    function generateQRCode() {
+      const viewerUrl = window.location.href.replace('index.html', 'viewer.html');
+      const qrContainer = document.getElementById('qrcode');
+
+      QRCode.toCanvas(viewerUrl, {
+        width: 200,
+        margin: 2,
+        color: {
+          dark: '#165b33',
+          light: '#ffffff'
+        }
+      }, function(error, canvas) {
+        if (error) {
+          console.error(error);
+          qrContainer.innerHTML = '<p style="color: #999;">QR Code 產生失敗</p>';
+          return;
+        }
+        qrContainer.innerHTML = '';
+        qrContainer.appendChild(canvas);
+      });
+    }
+
+    // 更新狀態顯示
+    function updateStatusDisplay(state) {
+      const statusDiv = document.getElementById('status-display');
+
+      const statusMap = {
+        'waiting': { text: '等待中', class: 'status-waiting', icon: '⏳' },
+        'pairing': { text: '配對中', class: 'status-pairing', icon: '🔄' },
+        'revealing': { text: '揭曉中', class: 'status-revealing', icon: '🎁' },
+        'finished': { text: '已完成', class: 'status-finished', icon: '✅' }
+      };
+
+      const status = statusMap[state.status] || statusMap['waiting'];
+
+      statusDiv.innerHTML = `
+        <span class="status-badge ${status.class}">
+          ${status.icon} ${status.text}
+        </span>
+      `;
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      // 產生雪花效果
+      createSnowflakes();
+
+      // 產生 QR Code
+      generateQRCode();
+
+      // 監聽狀態變化
+      onGameStateChange(updateStatusDisplay);
+    });
+  </script>
+</body>
+</html>

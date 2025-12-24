@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理介面 - MatchPlay</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- 密碼驗證彈窗 -->
+  <div id="password-modal" class="password-modal">
+    <div class="modal-content">
+      <h3>🔐 管理者登入</h3>
+      <div class="form-group">
+        <label for="password-input">請輸入管理者密碼</label>
+        <input type="password" id="password-input" class="form-control" placeholder="密碼">
+      </div>
+      <p id="password-error" class="error hidden">密碼錯誤，請重試</p>
+      <button id="login-btn" class="btn btn-primary btn-block">登入</button>
+      <a href="index.html" style="display: block; text-align: center; margin-top: 15px; color: #666;">返回首頁</a>
+    </div>
+  </div>
+
+  <!-- 主要內容 -->
+  <div id="admin-content" class="hidden">
+    <!-- 導航列 -->
+    <nav class="nav-bar">
+      <a href="index.html">← 返回首頁</a>
+      <span>管理介面</span>
+      <a href="#" id="logout-btn">登出</a>
+    </nav>
+
+    <div class="container">
+      <!-- 狀態顯示 -->
+      <div class="card">
+        <h2>📊 目前狀態</h2>
+        <div id="status-display">
+          <span class="status-badge status-waiting">⏳ 等待中</span>
+        </div>
+      </div>
+
+      <!-- 參與者名單 -->
+      <div class="card">
+        <h2>📋 參與者名單 (<span id="participant-count">0</span> 人)</h2>
+
+        <div class="add-participant">
+          <input type="text" id="new-participant" class="form-control" placeholder="輸入參與者姓名">
+          <button id="add-participant-btn" class="btn btn-primary">新增</button>
+        </div>
+
+        <ul id="participant-list" class="participant-list">
+          <li class="empty-state">
+            <div class="icon">👥</div>
+            <p>尚無參與者</p>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 動畫設定 -->
+      <div class="card">
+        <h2>⚙️ 動畫設定</h2>
+        <div class="form-group">
+          <label>名字滾動次數 (次)</label>
+          <input type="number" id="roll-count" class="form-control" value="15" min="8" max="30" step="1">
+          <small style="color: #888;">建議 12-20 次，數字越大動畫越長</small>
+        </div>
+        <div class="form-group">
+          <label>揭曉間隔 (秒) - 第一人揭曉後等待多久揭曉第二人</label>
+          <input type="number" id="reveal-delay" class="form-control" value="1" min="0.5" max="5" step="0.5">
+        </div>
+        <button id="save-settings-btn" class="btn btn-secondary">💾 儲存設定</button>
+      </div>
+
+      <!-- 控制面板 -->
+      <div class="card">
+        <h2>🎮 操作控制</h2>
+        <div class="control-panel">
+          <button id="start-pairing-btn" class="btn btn-gold btn-lg">🎲 開始配對</button>
+          <button id="reset-btn" class="btn btn-danger">🔄 重置配對</button>
+        </div>
+        <p id="pairing-hint" style="margin-top: 15px; color: #666; font-size: 0.9rem;"></p>
+      </div>
+
+      <!-- 配對結果 -->
+      <div class="card" id="pairs-section">
+        <h2>🎁 配對結果</h2>
+
+        <div class="progress-bar">
+          <div id="reveal-progress" class="progress" style="width: 0%"></div>
+        </div>
+        <p id="progress-text" style="text-align: center; color: #666; margin-bottom: 20px;">尚未配對</p>
+
+        <ul id="pairs-list" class="pair-list">
+          <!-- 配對項目會動態載入 -->
+        </ul>
+
+        <div style="margin-top: 20px; text-align: center;">
+          <button id="reveal-next-btn" class="btn btn-primary btn-lg hidden">🎁 揭曉下一組</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- 共用設定 -->
+  <script src="js/firebase-config.js"></script>
+
+  <script>
+    // 狀態
+    let isLoggedIn = false;
+    let currentParticipants = [];
+    let currentPairs = [];
+    let currentGameState = { status: 'waiting', currentPairIndex: 0 };
+
+    // DOM 元素
+    const passwordModal = document.getElementById('password-modal');
+    const adminContent = document.getElementById('admin-content');
+    const passwordInput = document.getElementById('password-input');
+    const passwordError = document.getElementById('password-error');
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    const participantList = document.getElementById('participant-list');
+    const participantCount = document.getElementById('participant-count');
+    const newParticipantInput = document.getElementById('new-participant');
+    const addParticipantBtn = document.getElementById('add-participant-btn');
+
+    const statusDisplay = document.getElementById('status-display');
+    const startPairingBtn = document.getElementById('start-pairing-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const pairingHint = document.getElementById('pairing-hint');
+
+    const pairsList = document.getElementById('pairs-list');
+    const revealProgress = document.getElementById('reveal-progress');
+    const progressText = document.getElementById('progress-text');
+    const revealNextBtn = document.getElementById('reveal-next-btn');
+
+    // === 登入/登出 ===
+    function login() {
+      const password = passwordInput.value;
+
+      if (verifyPassword(password)) {
+        isLoggedIn = true;
+        passwordModal.classList.add('hidden');
+        adminContent.classList.remove('hidden');
+        sessionStorage.setItem('adminLoggedIn', 'true');
+        initAdmin();
+      } else {
+        passwordError.classList.remove('hidden');
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
+    }
+
+    function logout() {
+      isLoggedIn = false;
+      sessionStorage.removeItem('adminLoggedIn');
+      passwordModal.classList.remove('hidden');
+      adminContent.classList.add('hidden');
+      passwordInput.value = '';
+      passwordError.classList.add('hidden');
+    }
+
+    function checkSession() {
+      if (sessionStorage.getItem('adminLoggedIn') === 'true') {
+        isLoggedIn = true;
+        passwordModal.classList.add('hidden');
+        adminContent.classList.remove('hidden');
+        initAdmin();
+      }
+    }
+
+    // === 參與者管理 ===
+    function renderParticipants(participants) {
+      currentParticipants = participants;
+      participantCount.textContent = participants.length;
+
+      if (participants.length === 0) {
+        participantList.innerHTML = `
+          <li class="empty-state">
+            <div class="icon">👥</div>
+            <p>尚無參與者</p>
+          </li>
+        `;
+        return;
+      }
+
+      participantList.innerHTML = participants.map((p, index) => `
+        <li class="participant-item" data-id="${p.id}">
+          <span class="participant-name">${index + 1}. ${escapeHtml(p.name)}</span>
+          <div class="participant-actions">
+            <button class="btn btn-icon btn-secondary edit-btn" title="編輯">✏️</button>
+            <button class="btn btn-icon btn-danger delete-btn" title="刪除">🗑️</button>
+          </div>
+        </li>
+      `).join('');
+
+      // 綁定事件
+      participantList.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', handleEditParticipant);
+      });
+
+      participantList.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', handleDeleteParticipant);
+      });
+
+      updatePairingHint();
+    }
+
+    async function handleAddParticipant() {
+      const name = newParticipantInput.value.trim();
+      if (!name) {
+        showToast('請輸入參與者姓名');
+        return;
+      }
+
+      // 檢查重複
+      if (currentParticipants.some(p => p.name === name)) {
+        showToast('此姓名已存在');
+        return;
+      }
+
+      try {
+        await addParticipant(name);
+        newParticipantInput.value = '';
+        showToast('已新增參與者');
+      } catch (error) {
+        console.error(error);
+        showToast('新增失敗');
+      }
+    }
+
+    async function handleEditParticipant(e) {
+      const item = e.target.closest('.participant-item');
+      const id = item.dataset.id;
+      const participant = currentParticipants.find(p => p.id === id);
+
+      const newName = prompt('編輯參與者姓名：', participant.name);
+      if (newName && newName.trim() && newName !== participant.name) {
+        try {
+          await updateParticipant(id, newName.trim());
+          showToast('已更新');
+        } catch (error) {
+          console.error(error);
+          showToast('更新失敗');
+        }
+      }
+    }
+
+    async function handleDeleteParticipant(e) {
+      const item = e.target.closest('.participant-item');
+      const id = item.dataset.id;
+      const participant = currentParticipants.find(p => p.id === id);
+
+      if (confirm(`確定要刪除「${participant.name}」嗎？`)) {
+        try {
+          await deleteParticipant(id);
+          showToast('已刪除');
+        } catch (error) {
+          console.error(error);
+          showToast('刪除失敗');
+        }
+      }
+    }
+
+    // === 狀態顯示 ===
+    function updateStatusDisplay(state) {
+      currentGameState = state;
+
+      const statusMap = {
+        'waiting': { text: '等待中', class: 'status-waiting', icon: '⏳' },
+        'pairing': { text: '配對中', class: 'status-pairing', icon: '🔄' },
+        'revealing': { text: '揭曉中', class: 'status-revealing', icon: '🎁' },
+        'finished': { text: '已完成', class: 'status-finished', icon: '✅' }
+      };
+
+      const status = statusMap[state.status] || statusMap['waiting'];
+
+      statusDisplay.innerHTML = `
+        <span class="status-badge ${status.class}">
+          ${status.icon} ${status.text}
+        </span>
+      `;
+
+      // 更新按鈕狀態
+      updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      const state = currentGameState.status;
+      const count = currentParticipants.length;
+
+      // 開始配對按鈕（現在支援奇數人數）
+      startPairingBtn.disabled = state !== 'waiting' || count < 2;
+
+      // 揭曉按鈕
+      if (state === 'revealing') {
+        revealNextBtn.classList.remove('hidden');
+      } else {
+        revealNextBtn.classList.add('hidden');
+      }
+
+      // 重置按鈕
+      resetBtn.disabled = state === 'waiting' && currentPairs.length === 0;
+
+      updatePairingHint();
+    }
+
+    function updatePairingHint() {
+      const count = currentParticipants.length;
+
+      if (count === 0) {
+        pairingHint.textContent = '請先新增參與者';
+      } else if (count === 1) {
+        pairingHint.textContent = '至少需要 2 位參與者';
+      } else if (count % 2 !== 0) {
+        const pairCount = Math.floor(count / 2);
+        pairingHint.textContent = `目前 ${count} 人（奇數），將產生 ${pairCount - 1} 組兩人配對 + 1 組三人配對`;
+      } else {
+        pairingHint.textContent = `目前 ${count} 人，可產生 ${count / 2} 組配對`;
+      }
+    }
+
+    // === 配對管理 ===
+    function renderPairs(pairs) {
+      currentPairs = pairs;
+
+      if (pairs.length === 0) {
+        pairsList.innerHTML = `
+          <li class="empty-state">
+            <div class="icon">🎁</div>
+            <p>尚未進行配對</p>
+          </li>
+        `;
+        progressText.textContent = '尚未配對';
+        revealProgress.style.width = '0%';
+        return;
+      }
+
+      // 只計算動畫已完成的配對
+      const completedCount = pairs.filter(p => p.animationComplete).length;
+      const totalCount = pairs.length;
+      const progress = (completedCount / totalCount) * 100;
+
+      revealProgress.style.width = progress + '%';
+      progressText.textContent = `已揭曉 ${completedCount} / ${totalCount} 組`;
+
+      pairsList.innerHTML = pairs.map((pair, index) => {
+        let pairDisplay = `第 ${index + 1} 組`;
+        let statusBadge = '🔒 未揭曉';
+        let statusClass = 'status-waiting';
+        let itemClass = '';
+
+        // 只有當動畫完成後才顯示名字
+        if (pair.animationComplete) {
+          if (pair.isTriple) {
+            pairDisplay = `${escapeHtml(pair.person1Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person2Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person3Name)}`;
+          } else {
+            pairDisplay = `${escapeHtml(pair.person1Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person2Name)}`;
+          }
+          statusBadge = '✅ 已揭曉';
+          statusClass = 'status-finished';
+          itemClass = 'revealed';
+        } else if (pair.revealed) {
+          // 動畫進行中
+          pairDisplay = pair.isTriple ? `第 ${index + 1} 組 (三人) 🎰 動畫中...` : `第 ${index + 1} 組 🎰 動畫中...`;
+          statusBadge = '🎬 揭曉中';
+          statusClass = 'status-revealing';
+        } else {
+          pairDisplay = pair.isTriple ? `第 ${index + 1} 組 (三人)` : `第 ${index + 1} 組`;
+        }
+        return `
+          <li class="pair-item ${itemClass}">
+            <span class="pair-names">${pairDisplay}</span>
+            <span class="status-badge ${statusClass}">
+              ${statusBadge}
+            </span>
+          </li>
+        `;
+      }).join('');
+    }
+
+    async function handleStartPairing() {
+      if (!confirm('確定要開始配對嗎？這將隨機分配配對組合。')) {
+        return;
+      }
+
+      try {
+        startPairingBtn.disabled = true;
+        startPairingBtn.textContent = '配對中...';
+
+        await performPairing();
+        showToast('配對完成！');
+      } catch (error) {
+        console.error(error);
+        showToast(error.message || '配對失敗');
+      } finally {
+        startPairingBtn.disabled = false;
+        startPairingBtn.textContent = '🎲 開始配對';
+      }
+    }
+
+    async function handleRevealNext() {
+      try {
+        revealNextBtn.disabled = true;
+
+        const pair = await revealNextPair();
+
+        if (pair) {
+          if (pair.isTriple) {
+            showToast(`揭曉：${pair.person1Name} ↔ ${pair.person2Name} ↔ ${pair.person3Name}`);
+          } else {
+            showToast(`揭曉：${pair.person1Name} ↔ ${pair.person2Name}`);
+          }
+        } else {
+          showToast('所有配對已揭曉完畢！');
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('揭曉失敗');
+      } finally {
+        revealNextBtn.disabled = false;
+      }
+    }
+
+    async function handleReset() {
+      if (!confirm('確定要重置配對嗎？所有配對結果將被清除。')) {
+        return;
+      }
+
+      try {
+        await resetGame();
+        showToast('已重置');
+      } catch (error) {
+        console.error(error);
+        showToast('重置失敗');
+      }
+    }
+
+    // === 工具函式 ===
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // === 動畫設定 ===
+    const rollCountInput = document.getElementById('roll-count');
+    const revealDelayInput = document.getElementById('reveal-delay');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+
+    function loadSettings() {
+      const rollCount = localStorage.getItem('rollCount') || '15';
+      const revealDelay = localStorage.getItem('revealDelay') || '1';
+      rollCountInput.value = rollCount;
+      revealDelayInput.value = revealDelay;
+
+      // 同步到 Firebase
+      database.ref('settings').update({
+        rollCount: parseInt(rollCount),
+        revealDelay: parseFloat(revealDelay)
+      });
+    }
+
+    async function saveSettings() {
+      const rollCount = parseInt(rollCountInput.value) || 15;
+      const revealDelay = parseFloat(revealDelayInput.value) || 1;
+
+      localStorage.setItem('rollCount', rollCount);
+      localStorage.setItem('revealDelay', revealDelay);
+
+      // 同步到 Firebase 給觀眾端使用
+      await database.ref('settings').update({
+        rollCount: rollCount,
+        revealDelay: revealDelay
+      });
+
+      showToast('設定已儲存');
+    }
+
+    // === 初始化 ===
+    function initAdmin() {
+      // 監聽參與者變化
+      onParticipantsChange(renderParticipants);
+
+      // 監聽遊戲狀態變化
+      onGameStateChange(updateStatusDisplay);
+
+      // 監聽配對變化
+      onPairsChange(renderPairs);
+
+      // 載入設定
+      loadSettings();
+    }
+
+    // === 事件綁定 ===
+    document.addEventListener('DOMContentLoaded', function() {
+      // 雪花效果
+      createSnowflakes();
+
+      // 檢查登入狀態
+      checkSession();
+
+      // 登入事件
+      loginBtn.addEventListener('click', login);
+      passwordInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') login();
+      });
+
+      // 登出事件
+      logoutBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        logout();
+      });
+
+      // 參與者管理
+      addParticipantBtn.addEventListener('click', handleAddParticipant);
+      newParticipantInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleAddParticipant();
+      });
+
+      // 配對控制
+      startPairingBtn.addEventListener('click', handleStartPairing);
+      revealNextBtn.addEventListener('click', handleRevealNext);
+      resetBtn.addEventListener('click', handleReset);
+
+      // 動畫設定
+      saveSettingsBtn.addEventListener('click', saveSettings);
+    });
+  </script>
+</body>
+</html>

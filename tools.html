@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>資料工具 - MatchPlay</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🔧 資料工具</h1>
+      <p class="subtitle">管理參與者順序</p>
+    </header>
+
+    <div class="card">
+      <h2>📋 插入參與者</h2>
+      <p style="color: #666; margin-bottom: 20px;">在指定位置插入新參與者，後面的人會自動往後移</p>
+
+      <div class="form-group">
+        <label>插入位置 (order)</label>
+        <input type="number" id="insert-position" class="form-control" value="7" min="1">
+      </div>
+
+      <div class="form-group">
+        <label>新參與者姓名</label>
+        <input type="text" id="insert-name" class="form-control" placeholder="輸入姓名">
+      </div>
+
+      <button id="insert-btn" class="btn btn-primary btn-block">插入參與者</button>
+    </div>
+
+    <div class="card">
+      <h2>📊 目前參與者列表</h2>
+      <ul id="participant-list" class="participant-list">
+        <li>載入中...</li>
+      </ul>
+      <button id="refresh-btn" class="btn btn-secondary" style="margin-top: 15px;">重新整理</button>
+    </div>
+
+    <div class="card">
+      <h2>🔄 重新排序</h2>
+      <p style="color: #666; margin-bottom: 20px;">按照目前順序重新編號 (1, 2, 3...)</p>
+      <button id="reorder-btn" class="btn btn-gold btn-block">重新排序</button>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px;">
+      <a href="admin.html" class="btn btn-secondary">← 返回管理頁</a>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="js/firebase-config.js"></script>
+
+  <script>
+    const participantList = document.getElementById('participant-list');
+    const insertBtn = document.getElementById('insert-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const reorderBtn = document.getElementById('reorder-btn');
+    const insertPosition = document.getElementById('insert-position');
+    const insertName = document.getElementById('insert-name');
+
+    // 載入參與者列表
+    async function loadParticipants() {
+      participantList.innerHTML = '<li>載入中...</li>';
+
+      const snapshot = await database.ref('participants').once('value');
+      const data = snapshot.val() || {};
+
+      const participants = Object.entries(data)
+        .map(([id, val]) => ({ id, ...val }))
+        .sort((a, b) => a.order - b.order);
+
+      if (participants.length === 0) {
+        participantList.innerHTML = '<li class="empty-state"><p>尚無參與者</p></li>';
+        return;
+      }
+
+      participantList.innerHTML = participants.map(p => `
+        <li class="participant-item">
+          <span><strong>${p.order}.</strong> ${p.name}</span>
+          <span style="color: #999; font-size: 0.8rem;">${p.id.substring(0, 8)}...</span>
+        </li>
+      `).join('');
+    }
+
+    // 插入參與者
+    async function insertParticipant() {
+      const position = parseInt(insertPosition.value);
+      const name = insertName.value.trim();
+
+      if (!name) {
+        showToast('請輸入姓名');
+        return;
+      }
+
+      if (position < 1) {
+        showToast('位置必須大於 0');
+        return;
+      }
+
+      insertBtn.disabled = true;
+      insertBtn.textContent = '處理中...';
+
+      try {
+        // 取得所有參與者
+        const snapshot = await database.ref('participants').once('value');
+        const data = snapshot.val() || {};
+
+        // 把 position 以後的都往後移一位
+        const updates = {};
+        Object.entries(data).forEach(([id, participant]) => {
+          if (participant.order >= position) {
+            updates[`${id}/order`] = participant.order + 1;
+          }
+        });
+
+        // 更新現有順序
+        if (Object.keys(updates).length > 0) {
+          await database.ref('participants').update(updates);
+        }
+
+        // 新增新參與者
+        const newId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        await database.ref('participants').child(newId).set({
+          name: name,
+          order: position
+        });
+
+        showToast(`已在位置 ${position} 插入「${name}」`);
+        insertName.value = '';
+        loadParticipants();
+
+      } catch (error) {
+        console.error(error);
+        showToast('操作失敗: ' + error.message);
+      } finally {
+        insertBtn.disabled = false;
+        insertBtn.textContent = '插入參與者';
+      }
+    }
+
+    // 重新排序
+    async function reorderParticipants() {
+      reorderBtn.disabled = true;
+      reorderBtn.textContent = '處理中...';
+
+      try {
+        const snapshot = await database.ref('participants').once('value');
+        const data = snapshot.val() || {};
+
+        const participants = Object.entries(data)
+          .map(([id, val]) => ({ id, ...val }))
+          .sort((a, b) => a.order - b.order);
+
+        const updates = {};
+        participants.forEach((p, index) => {
+          updates[`${p.id}/order`] = index + 1;
+        });
+
+        await database.ref('participants').update(updates);
+
+        showToast('已重新排序');
+        loadParticipants();
+
+      } catch (error) {
+        console.error(error);
+        showToast('操作失敗: ' + error.message);
+      } finally {
+        reorderBtn.disabled = false;
+        reorderBtn.textContent = '重新排序';
+      }
+    }
+
+    // 事件綁定
+    insertBtn.addEventListener('click', insertParticipant);
+    refreshBtn.addEventListener('click', loadParticipants);
+    reorderBtn.addEventListener('click', reorderParticipants);
+
+    insertName.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') insertParticipant();
+    });
+
+    // 初始化
+    loadParticipants();
+    createSnowflakes();
+  </script>
+</body>
+</html>

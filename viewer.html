@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>觀看配對 - MatchPlay</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* 觀看頁專用樣式 */
+    .viewer-container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-display {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .reveal-animation {
+      text-align: center;
+    }
+
+    .slot-machine {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      margin-bottom: 30px;
+    }
+
+    .slot-display {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .slot-item {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 16px;
+      padding: 25px 35px;
+      min-width: 140px;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #333;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.3s;
+    }
+
+    .slot-item.revealed {
+      background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
+      color: #1b5e20;
+      animation: popIn 0.5s ease;
+    }
+
+    .slot-arrow {
+      font-size: 2.5rem;
+      color: #c41e3a;
+    }
+
+    .rolling-text {
+      animation: textRoll 0.08s linear infinite;
+    }
+
+    @keyframes textRoll {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    .pair-number {
+      font-size: 1.2rem;
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    .celebration {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .confetti {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      animation: confettiFall 3s linear forwards;
+    }
+
+    @keyframes confettiFall {
+      0% {
+        transform: translateY(-10px) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh) rotate(720deg);
+        opacity: 0;
+      }
+    }
+
+    .history-section {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .history-section h3 {
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 1rem;
+    }
+
+    .history-list {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .history-item {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+    }
+
+    .waiting-screen {
+      text-align: center;
+    }
+
+    .waiting-icon {
+      font-size: 5rem;
+      margin-bottom: 20px;
+      animation: bounce 1.5s infinite;
+    }
+
+    .waiting-text {
+      font-size: 1.5rem;
+      margin-bottom: 10px;
+    }
+
+    .waiting-subtext {
+      opacity: 0.7;
+      font-size: 1rem;
+    }
+
+    .finished-screen {
+      text-align: center;
+    }
+
+    .finished-icon {
+      font-size: 5rem;
+      margin-bottom: 20px;
+    }
+
+    .finished-text {
+      font-size: 1.8rem;
+      margin-bottom: 30px;
+    }
+
+    .all-pairs {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 500px;
+      margin: 0 auto;
+      color: #333;
+    }
+
+    .all-pairs h3 {
+      margin-bottom: 20px;
+      color: #165b33;
+    }
+
+    .all-pairs-list {
+      list-style: none;
+    }
+
+    .all-pairs-item {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      font-size: 1.1rem;
+    }
+
+    .all-pairs-item:last-child {
+      border-bottom: none;
+    }
+
+    .all-pairs-item .arrow {
+      color: #c41e3a;
+      margin: 0 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="viewer-container">
+    <!-- 導航 -->
+    <nav class="nav-bar">
+      <a href="index.html">← 返回首頁</a>
+      <span>配對揭曉</span>
+      <span id="connection-status">🟢 連線中</span>
+    </nav>
+
+    <!-- 主顯示區 -->
+    <div class="main-display">
+      <!-- 等待畫面 -->
+      <div id="waiting-screen" class="waiting-screen">
+        <div class="waiting-icon">🎄</div>
+        <div class="waiting-text">等待配對開始...</div>
+        <div class="waiting-subtext">管理者正在準備中</div>
+      </div>
+
+      <!-- 揭曉動畫 -->
+      <div id="reveal-screen" class="reveal-animation hidden">
+        <div id="pair-number" class="pair-number">第 1 組</div>
+        <div class="slot-machine">
+          <div class="slot-display" id="slot-display">
+            <div id="slot-1" class="slot-item">？？？</div>
+            <div class="slot-arrow">↔</div>
+            <div id="slot-2" class="slot-item">？？？</div>
+            <div id="slot-arrow-3" class="slot-arrow hidden">↔</div>
+            <div id="slot-3" class="slot-item hidden">？？？</div>
+          </div>
+        </div>
+        <div id="reveal-status" style="font-size: 1.2rem; opacity: 0.8;">
+          等待揭曉...
+        </div>
+      </div>
+
+      <!-- 完成畫面 -->
+      <div id="finished-screen" class="finished-screen hidden">
+        <div class="finished-icon">🎉</div>
+        <div class="finished-text">配對揭曉完畢！</div>
+        <div class="all-pairs">
+          <h3>🎁 所有配對結果</h3>
+          <ul id="all-pairs-list" class="all-pairs-list">
+            <!-- 動態載入 -->
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 已揭曉歷史 -->
+    <div id="history-section" class="history-section hidden">
+      <h3>✅ 已揭曉配對</h3>
+      <ul id="history-list" class="history-list">
+        <!-- 動態載入 -->
+      </ul>
+    </div>
+
+    <!-- 慶祝特效容器 -->
+    <div id="celebration" class="celebration"></div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- 共用設定 -->
+  <script src="js/firebase-config.js"></script>
+
+  <script>
+    // 狀態
+    let currentGameState = { status: 'waiting', currentPairIndex: 0 };
+    let currentPairs = [];
+    let lastRevealedIndex = -1;
+    let isAnimating = false;
+
+    // 動畫設定（從 Firebase 讀取）
+    let animationSettings = {
+      rollCount: 15,    // 名字滾動次數
+      revealDelay: 1    // 揭曉間隔（秒）
+    };
+
+    // DOM 元素
+    const waitingScreen = document.getElementById('waiting-screen');
+    const revealScreen = document.getElementById('reveal-screen');
+    const finishedScreen = document.getElementById('finished-screen');
+    const historySection = document.getElementById('history-section');
+
+    const pairNumber = document.getElementById('pair-number');
+    const slot1 = document.getElementById('slot-1');
+    const slot2 = document.getElementById('slot-2');
+    const slot3 = document.getElementById('slot-3');
+    const slotArrow3 = document.getElementById('slot-arrow-3');
+    const revealStatus = document.getElementById('reveal-status');
+
+    const historyList = document.getElementById('history-list');
+    const allPairsList = document.getElementById('all-pairs-list');
+    const celebration = document.getElementById('celebration');
+
+    // 聖誕圖案庫（用於滾動動畫）
+    const christmasIcons = ['🎅', '🎄', '⭐', '🎁', '❄️', '🦌', '🔔', '🕯️', '🤶', '⛄', '🧦', '🍪', '🥛', '✨', '🎀', '🌟', '❄', '🎊', '🧣', '🎿'];
+
+    // 音效（使用 Web Audio API 產生 - 聖誕歡樂風格）
+    let audioContext = null;
+
+    function initAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return audioContext;
+    }
+
+    // 播放滾動音效（每次名字切換的叮噹聲）
+    let rollSoundIndex = 0;
+    const rollNotes = [523.25, 587.33, 659.25, 698.46, 783.99, 880.00, 987.77, 1046.50]; // C5 到 C6 音階
+
+    function playRollSound() {
+      try {
+        const ctx = initAudio();
+
+        // 使用音階循環，讓聲音更有旋律感
+        const noteFreq = rollNotes[rollSoundIndex % rollNotes.length];
+        rollSoundIndex++;
+
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        osc.frequency.value = noteFreq;
+        osc.type = 'sine';
+
+        // 短促清脆的音效
+        gainNode.gain.setValueAtTime(0.12, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+      } catch (e) {}
+    }
+
+    // 播放揭曉音效（聖誕鈴聲 + 魔法音效）
+    function playRevealSound() {
+      try {
+        const ctx = initAudio();
+
+        // Jingle Bells 風格的上升音階
+        const notes = [
+          { freq: 659.25, delay: 0 },      // E5
+          { freq: 783.99, delay: 0.08 },   // G5
+          { freq: 880.00, delay: 0.16 },   // A5
+          { freq: 1046.50, delay: 0.24 },  // C6
+          { freq: 1318.51, delay: 0.32 }   // E6
+        ];
+
+        notes.forEach(note => {
+          // 主音
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+
+          osc1.connect(gainNode);
+          osc2.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          osc1.frequency.value = note.freq;
+          osc2.frequency.value = note.freq * 2; // 八度泛音
+          osc1.type = 'sine';
+          osc2.type = 'triangle';
+
+          const startTime = ctx.currentTime + note.delay;
+          gainNode.gain.setValueAtTime(0.15, startTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+
+          osc1.start(startTime);
+          osc2.start(startTime);
+          osc1.stop(startTime + 0.25);
+          osc2.stop(startTime + 0.25);
+        });
+
+        // 加入閃亮的魔法音效
+        setTimeout(() => {
+          const sparkle = ctx.createOscillator();
+          const sparkleGain = ctx.createGain();
+          sparkle.connect(sparkleGain);
+          sparkleGain.connect(ctx.destination);
+          sparkle.frequency.value = 2500;
+          sparkle.type = 'sine';
+          sparkleGain.gain.setValueAtTime(0.05, ctx.currentTime);
+          sparkleGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+          sparkle.start(ctx.currentTime);
+          sparkle.stop(ctx.currentTime + 0.3);
+        }, 350);
+
+      } catch (e) {}
+    }
+
+    // 播放慶祝音效（聖誕歡樂旋律 - We Wish You a Merry Christmas 風格）
+    function playCelebrationSound() {
+      try {
+        const ctx = initAudio();
+
+        // 歡樂的聖誕旋律片段
+        const melody = [
+          { freq: 392.00, delay: 0, duration: 0.15 },      // G4
+          { freq: 523.25, delay: 0.15, duration: 0.15 },   // C5
+          { freq: 523.25, delay: 0.30, duration: 0.1 },    // C5
+          { freq: 587.33, delay: 0.40, duration: 0.1 },    // D5
+          { freq: 523.25, delay: 0.50, duration: 0.1 },    // C5
+          { freq: 493.88, delay: 0.60, duration: 0.1 },    // B4
+          { freq: 440.00, delay: 0.70, duration: 0.2 },    // A4
+          { freq: 440.00, delay: 0.90, duration: 0.2 },    // A4
+        ];
+
+        melody.forEach(note => {
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const osc3 = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+
+          osc1.connect(gainNode);
+          osc2.connect(gainNode);
+          osc3.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          // 豐富的和聲
+          osc1.frequency.value = note.freq;
+          osc2.frequency.value = note.freq * 1.5; // 五度和聲
+          osc3.frequency.value = note.freq * 2;   // 八度
+          osc1.type = 'sine';
+          osc2.type = 'triangle';
+          osc3.type = 'sine';
+
+          const startTime = ctx.currentTime + note.delay;
+          gainNode.gain.setValueAtTime(0.12, startTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + note.duration + 0.1);
+
+          osc1.start(startTime);
+          osc2.start(startTime);
+          osc3.start(startTime);
+          osc1.stop(startTime + note.duration + 0.15);
+          osc2.stop(startTime + note.duration + 0.15);
+          osc3.stop(startTime + note.duration + 0.15);
+        });
+
+        // 結尾的鈴鐺聲
+        setTimeout(() => {
+          for (let i = 0; i < 5; i++) {
+            setTimeout(() => {
+              const bell = ctx.createOscillator();
+              const bellGain = ctx.createGain();
+              bell.connect(bellGain);
+              bellGain.connect(ctx.destination);
+              bell.frequency.value = 2000 + Math.random() * 1000;
+              bell.type = 'sine';
+              bellGain.gain.setValueAtTime(0.06, ctx.currentTime);
+              bellGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+              bell.start(ctx.currentTime);
+              bell.stop(ctx.currentTime + 0.2);
+            }, i * 80);
+          }
+        }, 1100);
+
+      } catch (e) {}
+    }
+
+    // === 畫面切換 ===
+    function showScreen(screen) {
+      waitingScreen.classList.add('hidden');
+      revealScreen.classList.add('hidden');
+      finishedScreen.classList.add('hidden');
+      historySection.classList.add('hidden');
+
+      switch (screen) {
+        case 'waiting':
+          waitingScreen.classList.remove('hidden');
+          break;
+        case 'revealing':
+          revealScreen.classList.remove('hidden');
+          historySection.classList.remove('hidden');
+          break;
+        case 'finished':
+          finishedScreen.classList.remove('hidden');
+          break;
+      }
+    }
+
+    // === 遊戲狀態處理 ===
+    function handleGameStateChange(state) {
+      currentGameState = state;
+
+      switch (state.status) {
+        case 'waiting':
+          showScreen('waiting');
+          lastRevealedIndex = -1;
+          break;
+
+        case 'revealing':
+          showScreen('revealing');
+          checkForNewReveal();
+          break;
+
+        case 'finished':
+          // 保持在揭曉畫面，顯示最後的配對結果
+          showScreen('revealing');
+          // 如果正在播放動畫，等動畫結束後顯示完成訊息
+          if (!isAnimating) {
+            revealStatus.textContent = '🎉 所有配對揭曉完畢！🎉';
+            launchCelebration();
+          }
+          break;
+
+        default:
+          showScreen('waiting');
+      }
+    }
+
+    // === 配對處理 ===
+    function handlePairsChange(pairs) {
+      currentPairs = pairs;
+
+      if (currentGameState.status === 'revealing') {
+        checkForNewReveal();
+      }
+
+      if (currentGameState.status === 'finished') {
+        renderAllPairs();
+      }
+
+      renderHistory();
+    }
+
+    function checkForNewReveal() {
+      const revealedPairs = currentPairs.filter(p => p.revealed);
+      const newRevealedIndex = revealedPairs.length - 1;
+
+      if (newRevealedIndex > lastRevealedIndex && !isAnimating) {
+        const newPair = revealedPairs[revealedPairs.length - 1];
+        if (newPair) {
+          playRevealAnimation(newPair, newRevealedIndex + 1);
+          lastRevealedIndex = newRevealedIndex;
+        }
+      } else if (revealedPairs.length === 0) {
+        // 尚未揭曉任何配對
+        pairNumber.textContent = `第 1 組 / 共 ${currentPairs.length} 組`;
+        slot1.textContent = '？？？';
+        slot2.textContent = '？？？';
+        slot3.textContent = '？？？';
+        slot1.classList.remove('revealed');
+        slot2.classList.remove('revealed');
+        slot3.classList.remove('revealed');
+        slot3.classList.add('hidden');
+        slotArrow3.classList.add('hidden');
+        revealStatus.textContent = '等待揭曉...';
+      }
+    }
+
+    // === 揭曉動畫（逐一揭曉） ===
+    async function playRevealAnimation(pair, pairIndex) {
+      isAnimating = true;
+
+      const isTriple = pair.isTriple;
+      const pairLabel = isTriple ? `第 ${pairIndex} 組 (三人) / 共 ${currentPairs.length} 組` : `第 ${pairIndex} 組 / 共 ${currentPairs.length} 組`;
+      pairNumber.textContent = pairLabel;
+      revealStatus.textContent = '揭曉第一位...';
+
+      // 重置樣式
+      slot1.classList.remove('revealed');
+      slot2.classList.remove('revealed');
+      slot3.classList.remove('revealed');
+      slot1.textContent = '？？？';
+      slot2.textContent = '？？？';
+      slot3.textContent = '？？？';
+
+      // 顯示/隱藏第三個 slot
+      if (isTriple) {
+        slot3.classList.remove('hidden');
+        slotArrow3.classList.remove('hidden');
+      } else {
+        slot3.classList.add('hidden');
+        slotArrow3.classList.add('hidden');
+      }
+
+      const rollCount = animationSettings.rollCount;
+      const revealDelay = animationSettings.revealDelay * 1000;
+
+      // 逐一揭曉每個人
+      // 第一人
+      await revealSlot(slot1, pair.person1Name, rollCount);
+      launchMiniCelebration();
+
+      if (isTriple) {
+        revealStatus.textContent = '揭曉第二位...';
+      } else {
+        revealStatus.textContent = '揭曉配對對象...';
+      }
+
+      await delay(revealDelay);
+
+      // 第二人
+      await revealSlot(slot2, pair.person2Name, rollCount);
+      launchMiniCelebration();
+
+      // 第三人（如果是三人組）
+      if (isTriple) {
+        revealStatus.textContent = '揭曉第三位...';
+        await delay(revealDelay);
+        await revealSlot(slot3, pair.person3Name, rollCount);
+        launchMiniCelebration();
+      }
+
+      revealStatus.textContent = isTriple ? '三人配對成功！🎉' : '配對成功！🎉';
+
+      // 播放慶祝音效
+      playCelebrationSound();
+
+      // 標記動畫完成，讓其他頁面可以顯示結果
+      await database.ref('pairs').child(pair.id).update({ animationComplete: true });
+
+      isAnimating = false;
+
+      // 檢查是否為最後一組（遊戲已結束）
+      if (currentGameState.status === 'finished') {
+        // 延遲一下再顯示完成訊息
+        await delay(1500);
+        revealStatus.textContent = '🎉 所有配對揭曉完畢！🎉';
+        launchCelebration();
+      }
+    }
+
+    // 單一 slot 的滾動揭曉
+    function revealSlot(slotElement, finalName, totalRolls) {
+      return new Promise((resolve) => {
+        // 滾動速度：開始快，結束慢（漸慢效果）
+        let rollCount = 0;
+
+        // 重置音階索引
+        rollSoundIndex = 0;
+
+        slotElement.classList.add('rolling-text');
+
+        function doRoll() {
+          // 計算當前間隔時間（越來越慢）
+          const progress = rollCount / totalRolls;
+          // 從 100ms 漸變到 250ms（讓聲音更清晰）
+          const currentInterval = 100 + (progress * progress * 180);
+
+          slotElement.textContent = getRandomDisplayName();
+          rollCount++;
+
+          // 每次名字切換都播放音效
+          playRollSound();
+
+          if (rollCount >= totalRolls) {
+            slotElement.classList.remove('rolling-text');
+            slotElement.textContent = formatFinalName(finalName);
+            slotElement.classList.add('revealed');
+
+            // 播放揭曉音效
+            playRevealSound();
+
+            resolve();
+          } else {
+            setTimeout(doRoll, currentInterval);
+          }
+        }
+
+        // 開始滾動
+        doRoll();
+      });
+    }
+
+    // 延遲函式
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 取得隨機圖案
+    function getRandomIcon() {
+      return christmasIcons[Math.floor(Math.random() * christmasIcons.length)];
+    }
+
+    // 取得隨機顯示內容（圖案 + 名字）
+    function getRandomDisplayName() {
+      const icon = getRandomIcon();
+      if (currentPairs.length > 0) {
+        const allNames = [];
+        currentPairs.forEach(p => {
+          allNames.push(p.person1Name, p.person2Name);
+          if (p.person3Name) {
+            allNames.push(p.person3Name);
+          }
+        });
+        const randomName = allNames[Math.floor(Math.random() * allNames.length)];
+        return icon + ' ' + randomName;
+      }
+      return icon + ' ???';
+    }
+
+    // 格式化最終名字（加上圖案）
+    function formatFinalName(name) {
+      const icon = getRandomIcon();
+      return icon + ' ' + name;
+    }
+
+    // === 歷史記錄 ===
+    function renderHistory() {
+      // 只顯示動畫已完成的配對
+      const completedPairs = currentPairs.filter(p => p.animationComplete);
+
+      if (completedPairs.length === 0) {
+        historyList.innerHTML = '<li class="history-item" style="opacity: 0.5;">尚無揭曉</li>';
+        return;
+      }
+
+      historyList.innerHTML = completedPairs.map((pair, index) => {
+        if (pair.isTriple) {
+          return `<li class="history-item">${index + 1}. ${escapeHtml(pair.person1Name)} ↔ ${escapeHtml(pair.person2Name)} ↔ ${escapeHtml(pair.person3Name)}</li>`;
+        }
+        return `<li class="history-item">${index + 1}. ${escapeHtml(pair.person1Name)} ↔ ${escapeHtml(pair.person2Name)}</li>`;
+      }).join('');
+    }
+
+    function renderAllPairs() {
+      // 只顯示動畫已完成的配對
+      const completedPairs = currentPairs.filter(p => p.animationComplete);
+
+      if (completedPairs.length === 0) {
+        allPairsList.innerHTML = '<li>無配對資料</li>';
+        return;
+      }
+
+      allPairsList.innerHTML = completedPairs.map((pair, index) => {
+        if (pair.isTriple) {
+          return `<li class="all-pairs-item">${escapeHtml(pair.person1Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person2Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person3Name)}</li>`;
+        }
+        return `<li class="all-pairs-item">${escapeHtml(pair.person1Name)} <span class="arrow">↔</span> ${escapeHtml(pair.person2Name)}</li>`;
+      }).join('');
+    }
+
+    // === 慶祝效果 ===
+    function launchMiniCelebration() {
+      const colors = ['#c41e3a', '#165b33', '#f5b829', '#ff6b6b', '#4ecdc4'];
+
+      for (let i = 0; i < 20; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + '%';
+        confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.animationDuration = (Math.random() * 2 + 1) + 's';
+        confetti.style.animationDelay = Math.random() * 0.5 + 's';
+        celebration.appendChild(confetti);
+
+        setTimeout(() => confetti.remove(), 3000);
+      }
+    }
+
+    function launchCelebration() {
+      const colors = ['#c41e3a', '#165b33', '#f5b829', '#ff6b6b', '#4ecdc4', '#fff'];
+
+      for (let i = 0; i < 100; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + '%';
+        confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.width = (Math.random() * 10 + 5) + 'px';
+        confetti.style.height = (Math.random() * 10 + 5) + 'px';
+        confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
+        confetti.style.animationDelay = Math.random() * 2 + 's';
+        celebration.appendChild(confetti);
+
+        setTimeout(() => confetti.remove(), 5000);
+      }
+    }
+
+    // === 工具函式 ===
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // === 初始化 ===
+    document.addEventListener('DOMContentLoaded', function() {
+      // 雪花效果
+      createSnowflakes();
+
+      // 監聽動畫設定變化
+      database.ref('settings').on('value', (snapshot) => {
+        const settings = snapshot.val();
+        if (settings) {
+          animationSettings.rollCount = settings.rollCount || 15;
+          animationSettings.revealDelay = settings.revealDelay || 1;
+          console.log('動畫設定已更新:', animationSettings);
+        }
+      });
+
+      // 監聽遊戲狀態
+      onGameStateChange(handleGameStateChange);
+
+      // 監聽配對變化
+      onPairsChange(handlePairsChange);
+
+      // 連線狀態監測
+      database.ref('.info/connected').on('value', (snapshot) => {
+        const connected = snapshot.val();
+        const statusEl = document.getElementById('connection-status');
+        statusEl.textContent = connected ? '🟢 已連線' : '🔴 離線';
+      });
+    });
+  </script>
+</body>
+</html>
