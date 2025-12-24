@@ -50,7 +50,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <!-- QR Code 產生器 -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <!-- 共用設定 -->
   <script src="js/firebase-config.js"></script>
@@ -69,26 +69,22 @@
       }
 
       const qrContainer = document.getElementById('qrcode');
+      qrContainer.innerHTML = ''; // 清空容器
 
-      // 建立 canvas 元素
-      const canvas = document.createElement('canvas');
-
-      QRCode.toCanvas(canvas, viewerUrl, {
-        width: 200,
-        margin: 2,
-        color: {
-          dark: '#165b33',
-          light: '#ffffff'
-        }
-      }, function(error) {
-        if (error) {
-          console.error('QR Code 錯誤:', error);
-          qrContainer.innerHTML = '<p style="color: #999;">QR Code 產生失敗</p>';
-          return;
-        }
-        qrContainer.innerHTML = '';
-        qrContainer.appendChild(canvas);
-      });
+      try {
+        // 使用 qrcodejs library
+        new QRCode(qrContainer, {
+          text: viewerUrl,
+          width: 200,
+          height: 200,
+          colorDark: '#165b33',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+      } catch (error) {
+        console.error('QR Code 錯誤:', error);
+        qrContainer.innerHTML = '<p style="color: #999;">QR Code 產生失敗</p>';
+      }
     }
 
     // 更新狀態顯示
